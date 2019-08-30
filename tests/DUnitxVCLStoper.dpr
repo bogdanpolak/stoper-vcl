@@ -5,6 +5,7 @@ program DUnitxVCLStoper;
 {$ENDIF}{$STRONGLINKTYPES ON}
 uses
   SysUtils,
+  Vcl.Forms,
   {$IFDEF TESTINSIGHT}
   TestInsight.DUnitX,
   {$ENDIF }
@@ -12,7 +13,8 @@ uses
   DUnitX.Loggers.Xml.NUnit,
   DUnitX.TestFramework,
   Tests.TStoperFactory in 'Tests.TStoperFactory.pas',
-  Plus.Vcl.Stoper in '..\src\Plus.Vcl.Stoper.pas';
+  Plus.Vcl.Stoper in '..\src\Plus.Vcl.Stoper.pas',
+  Form.Main in 'Form.Main.pas' {Form1};
 
 var
   runner : ITestRunner;
@@ -21,7 +23,10 @@ var
   nunitLogger : ITestLogger;
 begin
 {$IFDEF TESTINSIGHT}
-  TestInsight.DUnitX.RunRegisteredTests;
+  Application.Initialize;
+  Application.MainFormOnTaskbar := True;
+  Application.CreateForm(TForm1, Form1);
+  Application.Run;
   exit;
 {$ENDIF}
   try
