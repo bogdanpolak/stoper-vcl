@@ -10,15 +10,16 @@ uses
 type
   TStoperC = class;
   TProxyTimer = class;
+  TTimerMode = (tmOnce, tmLoop);
 
   TStoperFactory = class
-  private
   strict private
     class var FInitialized: boolean;
     class var FOwner: TComponent;
     class var FNextID: Integer;
-    class var FIntervals: TDictionary<Integer, TProxyTimer>;
+    class var FTimers: TDictionary<Integer, TProxyTimer>;
     class procedure Initialize;
+    class function StartNewProxyTimer(const delayMs: Integer; aMode: TTimerMode; onIntervalProc: TProc): Integer; static;
   public
     class function SetTimeout(const delayMs: Integer;
       onIntervalProc: TProc): Integer;
@@ -27,6 +28,7 @@ type
     class procedure clearInterval(intervalID: Integer);
     class function StartStoperC(AOwner: TComponent): TStoperC;
     class procedure GarbageCollector;
+    class function CountTimers: integer;
   end;
 
   TStoperC = class(TComponent)
@@ -36,8 +38,6 @@ type
     function Stop: Integer;
     function Reset: Integer;
   end;
-
-  TTimerMode = (tmOnce, tmLoop);
 
   TProxyTimer = class(TComponent)
   strict private
@@ -59,58 +59,52 @@ implementation
 
 class procedure TStoperFactory.Initialize;
 begin
-  FIntervals := TDictionary<Integer, TProxyTimer>.Create;
+  FTimers := TDictionary<Integer, TProxyTimer>.Create;
   FOwner := TComponent.Create(nil);
   FNextID := 1;
   FInitialized := true;
 end;
 
-class function TStoperFactory.SetInterval(const delayMs: Integer;
-  onIntervalProc: TProc): Integer;
+class function TStoperFactory.StartNewProxyTimer(const delayMs: Integer; aMode:TTimerMode; onIntervalProc: TProc): Integer;
 var
   tmr: TProxyTimer;
 begin
+  GarbageCollector;
   if not FInitialized then
     Initialize();
   tmr := TProxyTimer.Create(FOwner);
-  FIntervals.Add(FNextID, tmr);
+  FTimers.Add(FNextID, tmr);
   Result := FNextID;
   FNextID := FNextID + 1;
   with tmr do
   begin
     OnTimerProc := onIntervalProc;
-    Mode := tmLoop;
+    Mode := aMode;
     StartTimer(delayMs);
   end;
+end;
+
+class function TStoperFactory.SetInterval(const delayMs: Integer;
+  onIntervalProc: TProc): Integer;
+begin
+  Result := StartNewProxyTimer (delayMs, tmLoop, onIntervalProc);
 end;
 
 class function TStoperFactory.SetTimeout(const delayMs: Integer;
   onIntervalProc: TProc): Integer;
-var
-  tmr: TProxyTimer;
 begin
-  if not FInitialized then
-    Initialize();
-  tmr := TProxyTimer.Create(FOwner);
-  FIntervals.Add(FNextID, tmr);
-  Result := FNextID;
-  FNextID := FNextID + 1;
-  with tmr do
-  begin
-    OnTimerProc := onIntervalProc;
-    Mode := tmOnce;
-    StartTimer(delayMs);
-  end;
+  Result := StartNewProxyTimer (delayMs, tmOnce, onIntervalProc);
 end;
 
 class procedure TStoperFactory.clearInterval(intervalID: Integer);
 var
-  AInterval: TProxyTimer;
+  timer: TProxyTimer;
 begin
-  if FInitialized and FIntervals.TryGetValue(intervalID, AInterval) then
+  if FInitialized and FTimers.TryGetValue(intervalID, timer) then
   begin
-
+    timer.Timer.Enabled := False;
   end;
+  GarbageCollector;
 end;
 
 class function TStoperFactory.StartStoperC(AOwner: TComponent): TStoperC;
@@ -118,9 +112,32 @@ begin
   Result := nil;
 end;
 
-class procedure TStoperFactory.GarbageCollector;
+class function TStoperFactory.CountTimers: integer;
 begin
+  if FInitialized then
+    Result := FTimers.Count
+  else
+    Result := 0;
+end;
 
+class procedure TStoperFactory.GarbageCollector;
+var
+  pair: TPair<Integer, TProxyTimer>;
+  keys: TArray<Integer>;
+  i: Integer;
+begin
+  if FInitialized then
+  begin
+    keys := FTimers.Keys.ToArray;
+    for i := Low(keys) to High(keys) do
+    begin
+      if not FTimers[keys[i]].Timer.Enabled then
+      begin
+        FTimers[keys[i]].Free;
+        FTimers.Remove(keys[i]);
+      end;
+    end;
+  end;
 end;
 
 { TStoperC }
